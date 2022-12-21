@@ -24,7 +24,8 @@ public class AddressBookServiceImpl extends ServiceImpl<AddressBookMapper, Addre
     public R<List<AddressBook>> getAddressBookList(){
         LambdaQueryWrapper<AddressBook> lwq = new LambdaQueryWrapper<>();
         lwq.eq(AddressBook::getUserId, BaseContext.getCurrentId());
-        return R.success(addressBookMapper.selectList(lwq));
+        List<AddressBook> list = addressBookMapper.selectList(lwq);
+        return R.success(list);
     }
 
     @Transactional

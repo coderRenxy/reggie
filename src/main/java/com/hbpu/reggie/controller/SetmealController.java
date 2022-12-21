@@ -17,6 +17,7 @@ import com.hbpu.reggie.service.SetmealService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -32,6 +33,8 @@ public class SetmealController {
     SetmealService setmealService;
     @Autowired
     DishService dishService;
+    @Autowired
+    RedisTemplate redisTemplate;
 
     @GetMapping("/page")
     public R<Page> getSetmealPage(int page,int pageSize,String name){
@@ -57,8 +60,11 @@ public class SetmealController {
     public R<String> SetmealStatusByStatus(@RequestParam List<Long> ids,@PathVariable int status){
         log.info(ids.toString());
         for(long id : ids){
-            Setmeal setmeal = new Setmeal();
-            setmeal.setId(id);
+            Setmeal setmeal = setmealService.getById(id);
+            String key = "setmeal_"+setmeal.getCategoryId()+"_"+status;
+            if(redisTemplate.opsForValue().get(key) != null)
+                redisTemplate.delete(key);
+            if(setmeal == null)    setmeal.setId(id);
             setmeal.setStatus(status);
             setmealService.updateById(setmeal);
         }

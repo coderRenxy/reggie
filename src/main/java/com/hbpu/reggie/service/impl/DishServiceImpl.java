@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,6 +39,9 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements Di
 
     @Autowired
     CategoryMapper categoryMapper;
+
+    @Autowired
+    RedisTemplate redisTemplate;
 
     public boolean deleteCategory(Long id){
         LambdaQueryWrapper<Dish> lqw_dish = new LambdaQueryWrapper<>();
@@ -78,6 +82,11 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements Di
 
     @Transactional
     public R<String> saveWithFlavor(DishDto dishDto){
+        String key = "dish_"+dishDto.getCategoryId()+"_"+dishDto.getStatus();
+        //如果缓存有，需要删除缓存，再 save
+        if(redisTemplate.opsForValue().get(key) != null)
+            redisTemplate.delete(key);
+        //如果缓存没有，只需要 save
         this.save(dishDto);
         Long dishId = dishDto.getId();
         List<DishFlavor> list = dishDto.getFlavors();
@@ -91,6 +100,11 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements Di
 
     @Transactional
     public R<String> updateDish(DishDto dishDto){
+        String key = "dish_"+dishDto.getCategoryId()+"_"+dishDto.getStatus();
+        //如果缓存有，需要删除缓存，再 update
+        if(redisTemplate.opsForValue().get(key) != null)
+            redisTemplate.delete(key);
+        //如果缓存没有，只需要 update
         Dish dish = new Dish();
         BeanUtils.copyProperties(dishDto,dish,"categoryName","copies","flavors");
         this.updateById(dish);
@@ -130,6 +144,11 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements Di
         LambdaQueryWrapper<DishFlavor> lwq = new LambdaQueryWrapper<>();
         for(long id : ids){
             lwq.eq(DishFlavor::getDishId,id);
+            //如果缓存有，需要删除缓存
+            Dish dish = dishMapper.selectById(id);
+            String key = "dish_"+dish.getCategoryId()+"_"+dish.getStatus();
+            if(redisTemplate.opsForValue().get(key) != null)
+                redisTemplate.delete(key);
             dishFlavorMapper.delete(lwq);
         }
         this.removeByIds(ids);
@@ -139,13 +158,19 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements Di
     public R<List<DishDto>> queryDishList(Dish dish){
 //        long categoryId = dish.getCategoryId();
 //        String name = dish.getName();
+        String key = "dish_"+dish.getCategoryId()+"_"+dish.getStatus();
+        //如果 redis 存在该 list，直接返回
+        List<DishDto> dishDtoList = null;
+        dishDtoList = (List<DishDto>) redisTemplate.opsForValue().get(key);
+        if(dishDtoList != null)    return R.success(dishDtoList);
+        //redis 不存在则 查询并放入 redis 并返回。
         LambdaQueryWrapper<Dish> lwq = new LambdaQueryWrapper<>();
         lwq.eq(dish.getCategoryId() != null,Dish::getCategoryId,dish.getCategoryId());
         lwq.like(dish.getName() != null,Dish::getName,dish.getName());
         lwq.eq(Dish::getStatus,1);
         lwq.orderByAsc(Dish::getSort).orderByDesc(Dish::getUpdateTime);
         List<Dish> dishList = dishMapper.selectList(lwq);
-        List<DishDto> dishDtoList = new ArrayList<>();
+        dishDtoList = new ArrayList<>();
         for (Dish dd : dishList){
             DishDto dishDto = new DishDto();
             BeanUtils.copyProperties(dd,dishDto);
@@ -155,6 +180,7 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements Di
             //dishDto.setCategoryName(categoryMapper.selectById(dd.getCategoryId()).getName());
             dishDtoList.add(dishDto);
         }
+        redisTemplate.opsForValue().set(key,dishDtoList);
         return R.success(dishDtoList);
     }
 

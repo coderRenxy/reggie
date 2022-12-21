@@ -17,11 +17,13 @@ import com.hbpu.reggie.service.SetmealService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @Slf4j
@@ -35,6 +37,8 @@ public class SetmealServiceImpl extends ServiceImpl<SetmealMapper, Setmeal> impl
     SetmealDishMapper setmealDishMapper;
     @Autowired
     CategoryMapper categoryMapper;
+    @Autowired
+    RedisTemplate redisTemplate;
 
     public boolean deleteCategory(Long id){
         LambdaQueryWrapper<Setmeal> lqw_Setmeal = new LambdaQueryWrapper<>();
@@ -48,6 +52,11 @@ public class SetmealServiceImpl extends ServiceImpl<SetmealMapper, Setmeal> impl
 
     @Transactional
     public R<String> addSetmeal(SetmealDto setmealDto){
+        String key = "setmeal_"+setmealDto.getCategoryId()+"_"+setmealDto.getStatus();
+        //如果缓存有，需要删除缓存，再 save
+        if(redisTemplate.opsForValue().get(key) != null)
+            redisTemplate.delete(key);
+        //如果缓存没有，只需要 save
         this.save(setmealDto);
         Long setmealId = setmealDto.getId();
         List<SetmealDish> list = setmealDto.getSetmealDishes();
@@ -94,6 +103,11 @@ public class SetmealServiceImpl extends ServiceImpl<SetmealMapper, Setmeal> impl
 
     @Transactional
     public R<String> editSetmealDto(SetmealDto setmealDto){
+        String key = "setmeal_"+setmealDto.getCategoryId()+"_"+setmealDto.getStatus();
+        //如果缓存有，需要删除缓存，再 update
+        if(redisTemplate.opsForValue().get(key) != null)
+            redisTemplate.delete(key);
+        //如果缓存没有，只需要 update
         setmealMapper.updateById(setmealDto);
         LambdaQueryWrapper<SetmealDish> lwq = new LambdaQueryWrapper<>();
         long setmealId = setmealDto.getId();
@@ -108,9 +122,14 @@ public class SetmealServiceImpl extends ServiceImpl<SetmealMapper, Setmeal> impl
     }
 
     public R<String> deleteSetmeal(List<Long> ids){
+        LambdaQueryWrapper<SetmealDish> lqw = new LambdaQueryWrapper();
         for(long id : ids){
-            LambdaQueryWrapper<SetmealDish> lqw = new LambdaQueryWrapper();
             lqw.eq(SetmealDish::getSetmealId,id);
+            //如果缓存有，需要删除缓存
+            Setmeal setmeal = setmealMapper.selectById(id);
+            String key = "setmeal_"+setmeal.getCategoryId()+"_"+setmeal.getStatus();
+            if(redisTemplate.opsForValue().get(key) != null)
+                redisTemplate.delete(key);
             setmealDishMapper.delete(lqw);//删除对应套餐下的所有菜品setmeal_dish
         }
         setmealMapper.deleteBatchIds(ids);
@@ -118,11 +137,19 @@ public class SetmealServiceImpl extends ServiceImpl<SetmealMapper, Setmeal> impl
     }
 
     public R<List<Setmeal>> setmealListApi(Setmeal setmeal){
+        String key = "setmeal_"+setmeal.getCategoryId()+"_"+setmeal.getStatus();
+        //如果 redis 存在该 list，直接返回
+        List<Setmeal> list = null;
+        list = (List<Setmeal>) redisTemplate.opsForValue().get(key);
+        if(list != null)    return R.success(list);
+        //redis 不存在则 查询并放入 redis 并返回。
         LambdaQueryWrapper<Setmeal> lqw = new LambdaQueryWrapper<>();
         lqw.eq(setmeal.getCategoryId() != null,Setmeal::getCategoryId,setmeal.getCategoryId());
         lqw.eq(setmeal.getStatus() != null,Setmeal::getStatus,setmeal.getStatus());
         lqw.orderByDesc(Setmeal::getUpdateTime);
-        return R.success(setmealMapper.selectList(lqw));
+        list = setmealMapper.selectList(lqw);
+        redisTemplate.opsForValue().set(key,list,60, TimeUnit.MINUTES);
+        return R.success(list);
     }
 
 }

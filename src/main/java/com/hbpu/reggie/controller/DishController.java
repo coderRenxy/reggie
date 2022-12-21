@@ -13,6 +13,7 @@ import com.hbpu.reggie.service.DishService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -27,6 +28,8 @@ public class DishController {
     CategoryService categoryService;
     @Autowired
     DishFlavorService dishFlavorService;
+    @Autowired
+    RedisTemplate redisTemplate;
 
     @GetMapping("/page")
     public R<Page> getDishPage(int page,int pageSize,String name){
@@ -54,8 +57,11 @@ public class DishController {
     public R<String> dishStatusByStatus(@RequestParam List<Long> ids,@PathVariable int status){
 //        log.info(ids.toString());
         for(long id : ids){
-            Dish dish = new Dish();
-            dish.setId(id);
+            Dish dish = dishService.getById(id);
+            String key = "dish_"+dish.getCategoryId()+"_"+dish.getStatus();
+            if(redisTemplate.opsForValue().get(key) != null)
+                redisTemplate.delete(key);
+            if(dish != null)  dish.setId(id);
             dish.setStatus(status);
             dishService.updateById(dish);
         }
