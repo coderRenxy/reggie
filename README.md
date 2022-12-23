@@ -1,7 +1,8 @@
 # 外卖平台
 
 
-#### 后端技术栈 Spring Boot、Mybatis plus、MySQL、Redis
+#### 后端技术栈 
+Spring Boot、Mybatis plus、MySQL、Redis
 
 #### 描述
 因为自己后端开发接口的基础功不扎实，例如常用的业务方法，一切业务逻辑不懂得处理而做的这个项目。  
